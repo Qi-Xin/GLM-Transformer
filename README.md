@@ -19,7 +19,7 @@ GLM-Transformer is a hybrid neural spike train modeling framework that combines 
    conda env create -f allen_env_full.yml
    conda activate allen
    ```
-   Note: PyTorch 12.1 or higher is required due to known bugs with `torch.fft.fft` in PyTorch 11.8 or earlier (see https://github.com/pytorch/pytorch/issues/111884).
+   Note: CUDA 12.1 or higher is required due to known bugs with `torch.fft.fft` in CUDA 11.8 or earlier (see https://github.com/pytorch/pytorch/issues/111884).
 
 ## Usage
 
