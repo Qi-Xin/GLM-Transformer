@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import scipy.stats
 import utility_functions as utils
 
-class VAETransformer_FCGPFA(nn.Module):
+class GLMTransformer(nn.Module):
     
     def __init__(
             self, 

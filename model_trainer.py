@@ -5,7 +5,7 @@ import os
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime, timedelta
-from VAETransformer_FCGPFA import VAETransformer_FCGPFA, get_K
+from GLMTransformer import GLMTransformer, get_K
 import utility_functions as utils
 import GLM
 import matplotlib.pyplot as plt
@@ -156,7 +156,7 @@ class Trainer:
         K = torch.tensor(get_K(nt=self.nt, L=self.params['K_tau'], sigma2=self.params['K_sigma2'])).to(self.device)
         self.D = torch.tensor(utils.second_order_diff_matrix(self.nt)).float().to(self.device) # shape: (nt-2, nt)
 
-        self.model = VAETransformer_FCGPFA(
+        self.model = GLMTransformer(
             transformer_num_layers=self.params['transformer_num_layers'],
             transformer_d_model=self.params['transformer_d_model'],
             transformer_dim_feedforward=self.params['transformer_dim_feedforward'],
