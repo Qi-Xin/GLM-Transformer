@@ -26,8 +26,6 @@ class GLMTransformer(nn.Module):
             coupling_nsubspace: int, # Coupling's feature:
             coupling_basis: torch.Tensor, # Coupling's feature:
             use_self_coupling: bool, # Coupling's feature:
-            coupling_strength_nlatent: int, # Coupling's feature:
-            coupling_strength_cov_kernel: float, # Coupling's parameters
             self_history_basis: torch.Tensor, # Self-history's feature:
             session_id2nneuron_list: dict, # all session id and corresponding nneuron_list
             use_area_specific_decoder: bool,
@@ -60,8 +58,6 @@ class GLMTransformer(nn.Module):
         self.accnneuron_dict = {}
         self.npadding = npadding
         self.coupling_nsubspace = coupling_nsubspace
-        self.coupling_strength_cov_kernel = coupling_strength_cov_kernel
-        self.coupling_strength_nlatent = coupling_strength_nlatent
         self.use_self_coupling = use_self_coupling
 
         ### VAETransformer's parameters
@@ -158,12 +154,6 @@ class GLMTransformer(nn.Module):
         self.init_self_history_params()
 
     def init_cp_params(self):
-        # self.cp_latents_readout = nn.Parameter(
-        #     0.2 * (torch.randn(self.narea, self.narea, self.coupling_strength_nlatent) * 2 - 1)
-        # )
-        # self.cp_time_varying_coef_offset = nn.Parameter(
-        #     1.0 * (torch.ones(self.narea, self.narea, 1, 1))
-        # )
         
         self.cp_beta_coupling_dict = nn.ModuleDict({
             str(session_id): nn.ModuleList([
@@ -233,46 +223,6 @@ class GLMTransformer(nn.Module):
             spike_trains,
             self.self_history_filters_dict[current_session_id], npadding=self.npadding
         )
-
-    def get_latents(self, lr=5e-1, max_iter=1000, tol=1e-2, verbose=False, fix_latents=False):
-        # device = self.cp_latents_readout.device
-        if fix_latents:
-            # self.latents = torch.zeros(self.ntrial, self.coupling_strength_nlatent, self.nt, device=self.cp_latents_readout.device)
-            # self.latents = torch.ones(self.ntrial, self.coupling_strength_nlatent, self.nt, device=self.cp_latents_readout.device)
-            # self.latents[:,:,:150] = -1
-            return None
-        '''
-        # Get the best latents under the current model
-        with torch.no_grad():
-            # weight: mnlt
-            # bias: mnt
-            weight = torch.zeros(self.ntrial, self.num_neurons, self.coupling_strength_nlatent, self.nt, device=device)
-            bias = torch.zeros(self.ntrial, self.num_neurons, self.nt, device=device)
-            bias += self.firing_rates_stimulus
-            for iarea in range(self.narea):
-                for jarea in range(self.narea):
-                    # if iarea != jarea, then we need to update weight and bias
-                    # if iarea == jarea, then we need to update bias, if and only if use_self_coupling is True
-                    # if iarea == jarea, we never update weight no matter use_self_coupling is True or False
-                    if iarea != jarea:
-                        weight[:, self.accnneuron[jarea]:self.accnneuron[jarea+1], :, :] += (
-                            self.coupling_outputs[iarea][jarea][:, :, None, :] *
-                            self.cp_latents_readout[None, None, iarea, jarea, :, None]
-                        )
-                    if iarea != jarea or self.use_self_coupling:
-                        bias[:, self.accnneuron[jarea]:self.accnneuron[jarea+1], :] += (
-                            self.coupling_outputs[iarea][jarea] *
-                            self.cp_time_varying_coef_offset[iarea, jarea, 0, 0]
-                        )
-        
-        self.mu, self.hessian, self.lambd, self.elbo = gpfa_poisson_fix_weights(
-            self.spikes_full[:,:,self.npadding:], weight, self.coupling_strength_cov_kernel, 
-            initial_mu=None, initial_hessian=None, bias=bias, 
-            lr=lr, max_iter=max_iter, tol=tol, verbose=False)
-        self.latents = self.mu
-
-        return self.elbo
-        '''
     
     def get_coupling_outputs(self, src):
         current_session_id = src['session_id']
@@ -310,16 +260,8 @@ class GLMTransformer(nn.Module):
                 )
         return None
 
-    def get_firing_rates_coupling(self, src, fix_latents=True):
-        # Generate time-varying coupling strength coefficients
-        if fix_latents:
-            pass
-        else:
-            self.time_varying_coef = torch.einsum(
-                'ijl,mlt -> ijmt', self.cp_latents_readout, self.latents
-            ) + self.cp_time_varying_coef_offset
-        # coupling_outputs in subspace, weight_receving, time_varying_coef (total coupling effects) 
-        # -> log_firing_rate
+    def get_firing_rates_coupling(self, src):
+        # coupling_outputs in subspace, weight_receving -> log_firing_rate
         accnneuron = self.accnneuron_dict[src['session_id']]
         num_neurons = self.num_neurons_dict[src['session_id']]
         ntrial = src['spike_trains'].shape[2]
@@ -332,24 +274,11 @@ class GLMTransformer(nn.Module):
                     continue
                     
                 coupling_output = self.coupling_outputs[iarea][jarea]
-                if not fix_latents and iarea != jarea:
-                    coupling_output = coupling_output * self.time_varying_coef[iarea, jarea, :, None, :]
                     
                 self.firing_rates_coupling[
                     :,accnneuron[jarea]:accnneuron[jarea+1],:
                 ] += coupling_output
         return None
-
-    def get_ci(self, alpha=0.05):
-        self.std = torch.sqrt(torch.diagonal(-torch.linalg.inv(self.hessian), dim1=-2, dim2=-1))
-        zscore = scipy.stats.norm.ppf(1-alpha/2)
-        self.ci = [self.mu - zscore * self.std, self.mu + zscore * self.std]
-        self.ci_time_varying_coef = [
-            torch.einsum('ijl,mlt -> ijmt', self.cp_latents_readout, self.ci[0]) \
-                + self.cp_time_varying_coef_offset, 
-            torch.einsum('ijl,mlt -> ijmt', self.cp_latents_readout, self.ci[1]) \
-                + self.cp_time_varying_coef_offset
-            ]
 
     def normalize_coupling_coefficients(self):
         ### Solve identifiability issue
@@ -382,7 +311,6 @@ class GLMTransformer(nn.Module):
     def forward(self, 
                 src,
                 fix_stimulus=False,
-                fix_latents=False, 
                 include_stimulus=True,
                 include_coupling=True,
                 include_self_history=False,
@@ -413,8 +341,7 @@ class GLMTransformer(nn.Module):
         # Get latents
         if include_coupling:
             self.get_coupling_outputs(src)
-            self.get_latents(fix_latents=fix_latents)
-            self.get_firing_rates_coupling(src, fix_latents=fix_latents)
+            self.get_firing_rates_coupling(src)
         if include_self_history:
             self.get_self_history(src)
         
@@ -619,158 +546,7 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0)].to(x.device)
         return self.dropout(x)
-    
-#%% Define decoder algorithm
-def gpfa_poisson_fix_weights(Y, weights, K, initial_mu=None, initial_hessian=None, 
-                            bias=None, lr=5e-1, max_iter=500, tol=1e-2, 
-                            print_iter=1, verbose=False, use_loss_to_stop=True):
-    """
-    Performs fixed weights GPFA with Poisson observations.
 
-    Args:
-        Y (torch.Tensor): Tensor of shape (ntrial, nneuron, nt) representing the spike counts.
-        weights (torch.Tensor): Tensor of shape (ntrial, nneuron, coupling_strength_nlatent, nt) representing the weights.
-        K (torch.Tensor): Tensor of shape (nt, nt) representing the covariance matrix of the latents.
-        bias (float, optional): Bias term. Defaults to None.
-        max_iter (int, optional): Maximum number of iterations. Defaults to 10.
-        tol (float, optional): Tolerance for convergence. Defaults to 1e-2.
-        verbose (bool, optional): Whether to print iteration information. Defaults to False.
-
-    Returns:
-        mu (torch.Tensor): Tensor of shape (ntrial, coupling_strength_nlatent, nt) representing the estimated latents.
-        hessian (torch.Tensor): Tensor of shape (ntrial, coupling_strength_nlatent, nt, nt) representing the Hessian matrix.
-        lambd (torch.Tensor): Tensor of shape (ntrial, nneuron, nt) representing the estimated Poisson rates.
-    """
-    
-    device = Y.device
-    ntrial, nneuron, coupling_strength_nlatent, nt = weights.shape
-
-    # Expand Y dimensions if needed
-    if Y.ndimension() == 2:
-        Y = Y.unsqueeze(0)
-
-    # Initialize latents
-    if initial_mu is not None:
-        mu = initial_mu
-    else:
-        mu = torch.zeros(ntrial, coupling_strength_nlatent, nt, device=device)
-    mu_record = []
-    
-    # Inverse of K with regularization
-    inv_K = torch.linalg.inv(K + 1e-3 * torch.eye(nt, device=device)).float()
-    if initial_hessian is not None:
-        hessian = initial_hessian
-    else:
-        hessian = inv_K.unsqueeze(0).unsqueeze(0).repeat(ntrial, coupling_strength_nlatent, 1, 1)
-    if bias is None:
-        bias = torch.tensor(4.0, device=device)
-    else:
-        bias = bias
-    loss_old = float('-inf')
-    flag = False
-
-    for i in (range(max_iter)):
-        
-        # Updated log_lambd calculation to handle the new shape of weights
-        log_lambd = torch.einsum('mnlt,mlt->mnt', weights, mu) + bias
-        # lambd = torch.exp(log_lambd)
-        # hessian += torch.eye(nt, device=device).unsqueeze(0).unsqueeze(0) * 1e-3
-        hessian_inv = torch.linalg.inv(hessian)
-        # lambd = torch.exp(log_lambd)
-        lambd = torch.exp(
-            torch.clamp(
-                log_lambd + 1/2*(torch.diagonal(hessian_inv, dim1=-2, dim2=-1).unsqueeze(1)*weights**2).sum(axis=2), 
-                max=30)
-            )
-        inv_K_times_hessian_inv = inv_K@hessian_inv
-
-        
-        ##############################
-        if use_loss_to_stop:
-            loss = torch.sum(Y * log_lambd) - torch.sum(lambd) - 1/2*(mu@inv_K*mu).sum()\
-                - 1/2*(torch.diagonal(inv_K_times_hessian_inv, dim1=-2, dim2=-1)).sum()\
-                    + 1/2*torch.log((torch.det(inv_K_times_hessian_inv)+1e-10)).sum() - nt
-                    # + 1/2*torch.logdet(inv_K_times_hessian_inv).sum() - nt
-
-            ############### For debug use ################
-            if np.abs(loss.item())>1e7:
-                pass
-                # raise ValueError('Loss is too big')
-            if loss.item()==float('inf') or torch.isnan(loss):
-                print(i)
-                print(loss.item())
-                print(torch.sum(Y * log_lambd))
-                print(torch.sum(lambd))
-                print(1/2*(mu@inv_K*mu).sum())
-                print(1/2*(torch.diagonal(inv_K_times_hessian_inv, dim1=-2, dim2=-1)).sum())
-                print(1/2*torch.log(torch.relu(torch.det(inv_K_times_hessian_inv))).sum())
-                raise ValueError('Loss is NaN')
-            ##############################################
-            
-            if verbose and i % print_iter == 0:
-                print(f'Iteration {i}: Loss change {loss.item() - loss_old}')
-
-            if loss.item() - loss_old < tol and i >= 1 :
-                flag = True
-                if verbose:
-                    print(f'Converged at iteration {i} with loss {loss.item()}')
-                break
-            
-            loss_old = loss.item()
-        ###############################
-
-        # Update gradient calculation
-        grad = torch.einsum('mnlt,mnt->mlt', weights, Y - lambd) - torch.matmul(mu, inv_K)
-        
-        # Update Hessian calculation to reflect the new dimensions and calculations
-        hessian = -inv_K.unsqueeze(0).unsqueeze(0) - make_4d_diagonal(torch.einsum('mnlt,mnt->mlt', weights**2, lambd))
-        # if torch.linalg.matrix_rank(hessian[0,0,:,:]) < nt:
-        #     raise ValueError('Rank of hessian is not full')
-        mu_update = torch.linalg.solve(hessian, grad.unsqueeze(-1)).squeeze(-1)
-        # mu_update = torch.linalg.lstsq(hessian, grad.unsqueeze(-1)).solution.squeeze(-1)
-        mu_new = mu - lr * mu_update
-
-        if torch.isnan(mu_update).any():
-            plt.plot(mu[:,0,:].cpu().numpy().T)
-            print(torch.isnan(torch.linalg.lstsq(hessian, grad.unsqueeze(-1)).solution.squeeze(-1)).any())
-            print(hessian[0,0,:,:])
-            ranks = torch.tensor([torch.linalg.matrix_rank(hessian[i,0,:,:]) for i in range(hessian.shape[0])])
-            print(f"rank of hessian: {ranks}")
-            ranks = torch.tensor([torch.linalg.matrix_rank(1e5*torch.eye(hessian.shape[-1],device=hessian.device)+hessian[i,0,:,:]) 
-                     for i in range(hessian.shape[0])])
-            print(f"rank of hessian: {ranks}")
-            raise ValueError('NaN in mu_new')
-        
-        #############################
-        if not use_loss_to_stop:
-
-            if torch.norm(lr * mu_update) < tol:
-                flag = True
-                if verbose:
-                    loss = torch.sum(Y * log_lambd) - torch.sum(lambd) - 1/2*(mu@inv_K*mu).sum()\
-                        - 1/2*(torch.diagonal(inv_K_times_hessian_inv, dim1=-2, dim2=-1)).sum()\
-                            + 1/2*torch.log(torch.relu(torch.det(inv_K_times_hessian_inv))).sum() - nt
-                    print(f'Converged at iteration {i} with loss {loss.item()}')
-                break
-        
-        #############################
-        mu = mu_new
-
-        
-        # # Record mu in each iteration
-        # mu_record.append(mu.clone().detach())
-        # stride = 3
-        # if i < 10*stride and i % stride == 0:
-        #     plt.plot(mu[0, 0, :].cpu().numpy(), label=f'Iteration {i+1}')
-        # if i == 10*stride-1:
-        #     plt.legend()
-        #     plt.show()
-        
-    if flag is False:
-        print(f'Not Converged with norm {torch.norm(lr * mu_update)} at the last iteration')
-        raise ValueError('Not Converged')
-    
-    return mu, hessian, lambd, loss.item()
 
 def get_K(sigma2=1.0, L=100.0, nt=500, use_torch=False, device='cpu'):
     """

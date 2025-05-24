@@ -1006,7 +1006,10 @@ def plot_single_factor_loading_horizontal(ax, gt, ft, title="", sort=True, neuro
 
     # ax.axvline(0, color='gray', linewidth=0.5, linestyle='--')
     ax.set_title(title)
-    ax.set_ylabel(r'Sorted neuron index')
+    if sort:
+        ax.set_ylabel(r'Sorted neuron index')
+    else:
+        ax.set_ylabel(r'Neuron index')
     ax.set_xlabel(r'Weight')
     ax.set_ylim(-1, len(ft))
     ax.set_yticks([])

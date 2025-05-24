@@ -153,7 +153,6 @@ class Trainer:
                                                   'num':self.params['self_history_basis_num'], 
                                                   'nonlinear':self.params['self_history_basis_nonlinear']})
         self_history_basis = torch.tensor(self_history_basis).float().to(self.device)
-        K = torch.tensor(get_K(nt=self.nt, L=self.params['K_tau'], sigma2=self.params['K_sigma2'])).to(self.device)
         self.D = torch.tensor(utils.second_order_diff_matrix(self.nt)).float().to(self.device) # shape: (nt-2, nt)
 
         self.model = GLMTransformer(
@@ -171,8 +170,6 @@ class Trainer:
             coupling_nsubspace=self.params['coupling_nsubspace'],
             coupling_basis=coupling_basis,
             use_self_coupling=self.params['use_self_coupling'],
-            coupling_strength_nlatent=self.params['coupling_strength_nlatent'],
-            coupling_strength_cov_kernel=K,
             self_history_basis=self_history_basis,
             session_id2nneuron_list=self.session_id2nneuron_list,
             use_area_specific_decoder=self.params['use_area_specific_decoder'],
@@ -199,7 +196,6 @@ class Trainer:
             include_coupling=True, 
             include_self_history=True,
             fix_stimulus=False,
-            fix_latents=False, 
         ):
 
         if verbose:
@@ -242,7 +238,6 @@ class Trainer:
                     include_coupling=include_coupling,
                     include_self_history=include_self_history,
                     fix_stimulus=fix_stimulus,
-                    fix_latents=fix_latents,
                 )
                 loss = self.model.loss_function(
                     firing_rate, 
@@ -275,7 +270,6 @@ class Trainer:
                         include_coupling=include_coupling,
                         include_self_history=include_self_history,
                         fix_stimulus=fix_stimulus,
-                        fix_latents=fix_latents,
                     )
                     loss = self.model.loss_function(
                         firing_rate, 
@@ -327,7 +321,6 @@ class Trainer:
             include_coupling=False,
             include_self_history=False,
             fix_stimulus=False,
-            fix_latents=False,
             return_torch=True, 
             return_trial_indices=True,
             return_spike_trains=False,
@@ -362,7 +355,6 @@ class Trainer:
                     include_coupling=include_coupling,
                     include_self_history=include_self_history,
                     fix_stimulus=fix_stimulus,
-                    fix_latents=fix_latents,
                 )
                 sti_mu_list.append(self.model.sti_mu)
                 sti_logvar_list.append(torch.exp(0.5 * self.model.sti_logvar))
@@ -397,42 +389,12 @@ class Trainer:
                                 self.model.current_session_id
                             ][iarea][jarea].norm(dim=1).mean()
                     )
-        if self.params['penalty_loading_similarity'] is not None:
-            for iarea in range(self.narea):
-                for jarea in range(self.narea):
-                    penalty += (
-                        self.params['penalty_loading_similarity'] \
-                            * self.model.cp_weight_receiving_dict[
-                                self.model.current_session_id
-                            ][iarea][jarea].var()
-                    )
-                    penalty += (
-                        self.params['penalty_loading_similarity'] \
-                            * self.model.cp_weight_sending_dict[
-                                self.model.current_session_id
-                            ][iarea][jarea].var()
-                    )
         if self.params['penalty_smoothing_spline'] is not None:
             if self.model.factors.dim() == 3:
                 second_diff = torch.einsum('atf,dt->adf', self.model.factors, self.D)
             else:
                 second_diff = torch.einsum('matf,dt->madf', self.model.factors, self.D)
             penalty += self.params['penalty_smoothing_spline'] * torch.mean(second_diff ** 2)
-        if self.params['penalty_diff_loading'] is not None:
-            # add penalty for coupling effect's loading matrix and stimulus effect's loading matrix
-            for iarea in range(self.narea):
-                for jarea in range(self.narea):
-                    if iarea == jarea:
-                        continue
-                    # nneurons x nfactor
-                    sti_loading = self.model.sti_readout_matrix_dict[
-                        self.model.current_session_id][iarea]
-                    # nneurons x nsubspace
-                    cp_loading = self.model.cp_weight_receiving_dict[
-                        self.model.current_session_id][iarea][jarea]
-                    penalty += (
-                        self.params['penalty_diff_loading'] * torch.norm(sti_loading.T @ cp_loading)**2
-                    )
         return penalty
     
     def save_model_and_hp(self, filename=None, test_loss=None):

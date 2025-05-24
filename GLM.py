@@ -2491,7 +2491,6 @@ def get_bump_centers(params, ntrial):
         "two_peaks_with_varying_baseline_slope", "two_peaks_with_varying_gain"
         ]:
         std1, corr1, std2, corr2 = (0, 0, 0, 0)
-        use_two_modes = False
     elif params["external_input_type"] in[
         "two_peaks_with_varying_timing", "two_peaks_with_all_varying",
         "two_peaks_with_varying_timing_baseline_slope"
@@ -2499,50 +2498,16 @@ def get_bump_centers(params, ntrial):
         std1, corr1, std2, corr2 = (
             params["std1"], params["corr1"], params["std2"], params["corr2"]
         )
-        use_two_modes = params["use_two_modes"]
     else:
         raise ValueError(f"Invalid external input type: {params['external_input_type']}")
     
     trial_info = None
-    if use_two_modes:
-        # First bump - two modes
-        bump_center_mean1a = [40, 60]  # First mode
-        bump_center_mean1b = [60, 80]  # Second mode
-        bump_center_cov1 = np.array([[std1**2, corr1*std1**2], [corr1*std1**2, std1**2]])
-        
-        # Second bump - two modes
-        bump_center_mean2a = [220, 250]  # First mode
-        bump_center_mean2b = [250, 270]  # Second mode
-        bump_center_cov2 = np.array([[std2**2, corr2*std2**2], [corr2*std2**2, std2**2]])
-        
-        # Randomly select which mode to use for each trial
-        mode_selector = np.random.random(ntrial) < 0.5
-        
-        # Generate from appropriate mode for each trial
-        bump_centers1 = np.zeros((ntrial, 2))
-        bump_centers2 = np.zeros((ntrial, 2))
-        
-        bump_centers1[mode_selector] = np.random.multivariate_normal(
-            bump_center_mean1a, bump_center_cov1, size=np.sum(mode_selector)
-        )
-        bump_centers1[~mode_selector] = np.random.multivariate_normal(
-            bump_center_mean1b, bump_center_cov1, size=np.sum(~mode_selector)
-        )
-        
-        bump_centers2[mode_selector] = np.random.multivariate_normal(
-            bump_center_mean2a, bump_center_cov2, size=np.sum(mode_selector)
-        )
-        bump_centers2[~mode_selector] = np.random.multivariate_normal(
-            bump_center_mean2b, bump_center_cov2, size=np.sum(~mode_selector)
-        )
-        trial_info = mode_selector
-    else:
-        bump_center_mean1 = [60, 65]
-        bump_center_cov1 = np.array([[std1**2, corr1*std1**2], [corr1*std1**2, std1**2]])
-        bump_center_mean2 = [260, 265]
-        bump_center_cov2 = np.array([[std2**2, corr2*std2**2], [corr2*std2**2, std2**2]])
-        bump_centers1 = np.random.multivariate_normal(bump_center_mean1, bump_center_cov1, size=ntrial)
-        bump_centers2 = np.random.multivariate_normal(bump_center_mean2, bump_center_cov2, size=ntrial)
+    bump_center_mean1 = [60, 65]
+    bump_center_cov1 = np.array([[std1**2, corr1*std1**2], [corr1*std1**2, std1**2]])
+    bump_center_mean2 = [260, 265]
+    bump_center_cov2 = np.array([[std2**2, corr2*std2**2], [corr2*std2**2, std2**2]])
+    bump_centers1 = np.random.multivariate_normal(bump_center_mean1, bump_center_cov1, size=ntrial)
+    bump_centers2 = np.random.multivariate_normal(bump_center_mean2, bump_center_cov2, size=ntrial)
 
     # Apply bounds to both cases
     bump_centers1[bump_centers1>=130] = 130
