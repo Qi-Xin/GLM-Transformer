@@ -35,7 +35,7 @@ Please see `tutorial.ipynb` to get started.
 
 - For simulated data using GLM or EIF neurons, data generation can be found in the corresponding Jupyter Notebooks.
 - For the Allen Institute dataset, you need to download the data using the AllenSDK and set the appropriate manifest path in your environment.
-- Due to limited memory when loading multiple Allen Institute sessions, we provide `Allen_dataloader_multi_session`, a multi-session dataloader that handles this efficiently. The loader converts spike times (a pandas DataFrame where each row is a spike with features including time and neuron_id) to spike trains (a 3D matrix: time × neuron × trial) on the fly while loading a batch (typically 64 trials from the same session). See `download_data.ipynb` for details.
+- Due to limited memory when loading multiple Allen Institute sessions, we provide `Allen_dataloader_multi_session`, a multi-session dataloader that handles this efficiently. The loader converts spike times (a pandas DataFrame where each row is a spike with features including time and neuron_id) to spike trains (a 3D matrix: time × neuron × trial) on the fly while loading a batch (typically 64 trials from the same session). For a quick and lightweight introduction, see `Allen_dataloader_multi_session_tutorial.ipynb`.
 
 ### Example Notebooks
 
